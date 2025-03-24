@@ -62,26 +62,25 @@ app.get("/photos", async (req, res) => {
 app.get("/photos/:id", async (req, res) => {
     try {
         const id = req.params.id;
-        const hashKey = "photos:hash";
+        const cacheKey = `photo:${id}`;  // Unique key for each photo
 
-        // Check cache first
-        const cachedPhoto = await redisClient.hGet(hashKey, id);
+        // Try to get data from cache
+        const cachedPhoto = await redisClient.get(cacheKey);
         if (cachedPhoto) {
             console.log(`[${Date.now()}] Cache hit for photo ${id}`);
             return res.json(JSON.parse(cachedPhoto));
         }
 
-        // Fetch from API
+        // If not in cache, fetch from API
         const { data } = await axios.get(`https://jsonplaceholder.typicode.com/photos/${id}`);
 
-        console.log(`[${Date.now()}] Sending response to client...`);
-        res.json(data); // Send response
+        // Respond to client immediately
+        res.json(data);
 
-        // Only start Redis caching after response is fully sent
+        // Cache the data in Redis asynchronously (after response)
         res.on("finish", async () => {
             try {
-                await redisClient.hSet(hashKey, id, JSON.stringify(data));
-                await redisClient.expire(hashKey, DEFAULT_EXPIRATION);
+                await redisClient.setEx(cacheKey, DEFAULT_EXPIRATION, JSON.stringify(data));
                 console.log(`[${Date.now()}] Data cached for photo ${id}`);
             } catch (err) {
                 console.error("Failed to cache photo:", err);
